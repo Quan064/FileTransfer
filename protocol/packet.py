@@ -25,7 +25,7 @@ class Packet:
     
     def __repr__(self) -> str:
         """Provides a developer-friendly representation of the packet."""
-        return f"Packet(opcode={self.opcode.name}, user_id={self.user_id}, payload_len={len(self.payload)})"
+        return f"Packet(opcode={self.opcode.name}, user_id={self.user_id}, payload_len={len(self.payload)}, payload={self.payload[:64]})"
     
     def pack(self) -> bytes:
         """Packs the packet object into a byte string for transmission."""

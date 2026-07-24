@@ -1,18 +1,26 @@
+import json
+import os
+import shlex
 import socket
+import struct
 import sys
 
 import config
+from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.framing import send_packet, recv_packet
+
+STATE_FILE = os.path.join(os.path.dirname(__file__), ".client_state.json")
+
 
 class Client:
     """Manages the connection and communication with the server."""
+    
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
         self.sock = None
-        self.user_id = 0 # Will be set by the user
+        self.user_id = 0
     
     def connect(self):
         """Connects to the server."""
@@ -27,47 +35,261 @@ class Client:
     
     def login(self, username: str, user_id: int):
         """Sends a LOGIN packet to the server."""
-        if not self.sock:
-            print("[!] Not connected to the server.")
-            return
+        if not self.sock and not self.connect():
+            return False
         
         self.user_id = user_id
-        payload = username.encode('utf-8')
+        payload = username.encode("utf-8")
         login_packet = Packet(Opcode.LOGIN, self.user_id, payload)
         
-        print(f"[<-] Sending: {login_packet}")
         send_packet(self.sock, login_packet)
         
-        # Wait for ACK
         response = recv_packet(self.sock)
         if response and response.opcode == Opcode.ACK:
-            print(f"[->] Received: {response}")
+            self._save_state(username, user_id)
             print(f"[*] Login successful as '{username}'.")
-        else:
-            print("[!] Login failed. Server response:", response)
+            return True
+        
+        print("[!] Login failed. Server response:", response)
+        return False
+    
+    def list_files(self, username: str | None = None, user_id: int | None = None):
+        """Requests the file list from the server."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        request = Packet(Opcode.FILE_LIST, self.user_id, b"")
+        send_packet(self.sock, request)
+        
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.FILE_LIST_RESP:
+            payload = response.payload.decode("utf-8")
+            if payload:
+                print(payload)
+            else:
+                print("[+] No files found.")
+            return True
+        
+        print("[!] Failed to retrieve file list.")
+        return False
+    
+    def upload_file(self, local_path: str, remote_name: str | None = None, username: str | None = None, user_id: int | None = None):
+        """Uploads a local file to the user's storage folder on the server."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        if not os.path.exists(local_path):
+            print(f"[!] File not found: {local_path}")
+            return False
+        
+        filename = remote_name or os.path.basename(local_path)
+        with open(local_path, "rb") as handle:
+            file_data = handle.read()
+        
+        payload = self._encode_file_payload(filename, file_data)
+        request = Packet(Opcode.FILE_UPLOAD, self.user_id, payload)
+        send_packet(self.sock, request)
+        
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.ACK:
+            print(f"[*] Uploaded '{filename}'.")
+            return True
+        
+        print("[!] Upload failed.", response)
+        return False
+    
+    def download_file(self, remote_name: str, local_path: str, username: str | None = None, user_id: int | None = None):
+        """Downloads a file from the server into a local path."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        request = Packet(Opcode.FILE_DOWNLOAD, self.user_id, remote_name.encode("utf-8"))
+        send_packet(self.sock, request)
+        
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.FILE_CHUNK:
+            target_path = self._resolve_download_path(local_path, remote_name)
+            target_dir = os.path.dirname(target_path)
+            if target_dir:
+                os.makedirs(target_dir, exist_ok=True)
+            
+            try:
+                with open(target_path, "wb") as handle:
+                    handle.write(response.payload)
+                print(f"[*] Downloaded '{remote_name}' to '{target_path}'.")
+                return True
+            except OSError as exc:
+                print(f"[!] Cannot write downloaded file: {exc}")
+                return False
+        
+        print("[!] Download failed.", response)
+        return False
+
+    def _resolve_download_path(self, local_path: str, remote_name: str) -> str:
+        """Resolve the final file path for a download request."""
+        if os.path.isdir(local_path) or local_path.endswith(os.path.sep) or local_path.endswith("/") or local_path.endswith("\\"):
+            return os.path.join(local_path, os.path.basename(remote_name))
+        return local_path
+    
+    def delete_file(self, remote_name: str, username: str | None = None, user_id: int | None = None):
+        """Deletes a file from the server for the current user."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        request = Packet(Opcode.FILE_DELETE, self.user_id, remote_name.encode("utf-8"))
+        send_packet(self.sock, request)
+        
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.ACK:
+            print(f"[*] Deleted '{remote_name}'.")
+            return True
+        
+        print("[!] Delete failed.", response)
+        return False
+    
+    def logout(self, username: str | None = None, user_id: int | None = None):
+        """Logs out from the server and closes the connection."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        request = Packet(Opcode.LOGOUT, self.user_id, b"")
+        send_packet(self.sock, request)
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.ACK:
+            print("[*] Logged out.")
+            return True
+        
+        print("[!] Logout failed.", response)
+        return False
+    
+    def run_interactive_session(self, username: str, user_id: int):
+        """Keeps the connection open so the user can issue multiple commands in one session."""
+        print(f"[*] Interactive session started for '{username}'. Type 'help' or 'exit'.")
+        while True:
+            try:
+                raw_command = input("> ").strip()
+            except EOFError:
+                break
+            
+            if not raw_command:
+                continue
+            
+            parts = shlex.split(raw_command)
+            action = parts[0].lower()
+            
+            if action in {"exit", "quit"}:
+                break
+            if action == "help":
+                print("Commands: list | upload <local_path> [remote_name] | download <remote_name> <local_path> | delete <remote_name> | logout | exit")
+            elif action == "list":
+                self.list_files(username=username, user_id=user_id)
+            elif action == "upload":
+                if len(parts) < 2:
+                    print("Usage: upload <local_path> [remote_name]")
+                    continue
+                local_path = parts[1]
+                remote_name = parts[2] if len(parts) > 2 else None
+                self.upload_file(local_path, remote_name=remote_name, username=username, user_id=user_id)
+            elif action == "download":
+                if len(parts) < 3:
+                    print("Usage: download <remote_name> <local_path>")
+                    continue
+                self.download_file(parts[1], parts[2], username=username, user_id=user_id)
+            elif action == "delete":
+                if len(parts) < 2:
+                    print("Usage: delete <remote_name>")
+                    continue
+                self.delete_file(parts[1], username=username, user_id=user_id)
+            elif action == "logout":
+                self.logout(username=username, user_id=user_id)
+                break
+            else:
+                print("Unknown command. Type 'help'.")
+        
+        self.close()
     
     def close(self):
         """Closes the connection to the server."""
         if self.sock:
             self.sock.close()
+            self.sock = None
             print("[*] Connection closed.")
+    
+    def _ensure_login(self, username: str | None, user_id: int | None):
+        state = self._load_state()
+        if username is None and state:
+            username = state.get("username")
+            user_id = state.get("user_id")
+        
+        if username is None:
+            username = "anonymous"
+        if user_id is None:
+            user_id = 1
+        
+        if not self.sock and not self.connect():
+            return False
+        
+        if self.user_id == 0 and self.sock:
+            return self.login(username, user_id)
+        return True
+    
+    def _save_state(self, username: str, user_id: int):
+        with open(STATE_FILE, "w", encoding="utf-8") as handle:
+            json.dump({"username": username, "user_id": user_id}, handle)
+    
+    def _load_state(self) -> dict:
+        if not os.path.exists(STATE_FILE):
+            return None
+        with open(STATE_FILE, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    
+    def _encode_file_payload(self, filename: str, file_data: bytes) -> bytes:
+        filename_bytes = filename.encode("utf-8")
+        return struct.pack(">I", len(filename_bytes)) + filename_bytes + file_data
+
 
 def main():
     """Main function to run the client CLI."""
     client = Client(config.HOST, config.PORT)
-    if not client.connect():
+    
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <login|upload|list|download|delete> ...")
         sys.exit(1)
     
-    # Example usage: python client.py login my_username 123
-    if len(sys.argv) > 2 and sys.argv[1].lower() == 'login':
-        username = sys.argv[2]
-        user_id = int(sys.argv[3]) if len(sys.argv) > 3 else 1 # Simple user ID for now
-        client.login(username, user_id)
-    else:
-        print("Usage: python client.py login <username> [user_id]")
-    
-    # The client will do more in a real command loop
-    client.close()
+    command = sys.argv[1].lower()
+    try:
+        if command == "login":
+            username = sys.argv[2]
+            user_id = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+            interactive = "--interactive" in sys.argv[4:]
+            if client.login(username, user_id) and interactive:
+                client.run_interactive_session(username, user_id)
+        elif command == "upload":
+            local_path = sys.argv[2]
+            remote_name = sys.argv[3] if len(sys.argv) > 3 else None
+            username = sys.argv[4] if len(sys.argv) > 4 else None
+            user_id = int(sys.argv[5]) if len(sys.argv) > 5 else None
+            client.upload_file(local_path, remote_name=remote_name, username=username, user_id=user_id)
+        elif command == "list":
+            username = sys.argv[2] if len(sys.argv) > 2 else None
+            user_id = int(sys.argv[3]) if len(sys.argv) > 3 else None
+            client.list_files(username=username, user_id=user_id)
+        elif command == "download":
+            remote_name = sys.argv[2]
+            local_path = sys.argv[3]
+            username = sys.argv[4] if len(sys.argv) > 4 else None
+            user_id = int(sys.argv[5]) if len(sys.argv) > 5 else None
+            client.download_file(remote_name, local_path, username=username, user_id=user_id)
+        elif command == "delete":
+            remote_name = sys.argv[2]
+            username = sys.argv[3] if len(sys.argv) > 3 else None
+            user_id = int(sys.argv[4]) if len(sys.argv) > 4 else None
+            client.delete_file(remote_name, username=username, user_id=user_id)
+        else:
+            print("Usage: python client.py <login|upload|list|download|delete> ...")
+    finally:
+        client.close()
+
 
 if __name__ == "__main__":
     main()

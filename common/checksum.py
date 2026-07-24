@@ -6,8 +6,7 @@ def calculate_checksum(file_path: str, algorithm: str = 'sha256', chunk_size: in
     
     Args:
         file_path: The path to the file.
-        algorithm: The hash algorithm to use (e.g., 'md5', 'sha256'). 
-                   Defaults to 'sha256' as it's more secure than MD5.
+        algorithm: The hash algorithm to use (e.g., 'md5', 'sha256'). Defaults to 'sha256' as it's more secure than MD5.
         chunk_size: The size of chunks to read from the file at a time.
     
     Returns:

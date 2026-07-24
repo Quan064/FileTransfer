@@ -18,7 +18,7 @@ def setup_server_logger(name: str = 'FileServer', level=logging.INFO) -> logging
     """
     # Create log directory if it doesn't exist
     os.makedirs(LOG_DIR, exist_ok=True)
-
+    
     logger = logging.getLogger(name)
     logger.setLevel(level)
     
