@@ -8,8 +8,10 @@ from protocol.opcode import Opcode
 HEADER_FORMAT = '>HH'
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
+
 class Packet:
     """Represents a single protocol packet."""
+    
     def __init__(self, opcode: Opcode, user_id: int = 0, payload: bytes = b''):
         """
         Initializes a Packet object.
@@ -25,7 +27,13 @@ class Packet:
     
     def __repr__(self) -> str:
         """Provides a developer-friendly representation of the packet."""
-        return f"Packet(opcode={self.opcode.name}, user_id={self.user_id}, payload_len={len(self.payload)}, payload={self.payload[:64]})"
+        return (
+            "Packet("
+            f"opcode={self.opcode.name}, "
+            f"user_id={self.user_id}, "
+            f"payload_len={len(self.payload)}, "
+            f"payload={self.payload[:64]})"
+        )
     
     def pack(self) -> bytes:
         """Packs the packet object into a byte string for transmission."""

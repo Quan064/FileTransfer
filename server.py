@@ -1,21 +1,46 @@
+import os
+import socket
 import logging
 import os
 import socket
-import struct
 import threading
+import time
 
-import config
+import common.config as config
 from common.logger import setup_server_logger
 from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
+from protocol.payloads import decode_file_metadata
+from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
+
+class UserStorage:
+    """File-system namespace for one logged-in user."""
+    
+    def __init__(self, root_dir: str, username: str):
+        self.root_dir = root_dir
+        self.username = username
+        self.path = os.path.join(root_dir, username)
+        os.makedirs(self.path, exist_ok=True)
+    
+    def safe_path(self, filename: str) -> str:
+        safe_name = os.path.basename(filename)
+        if not safe_name:
+            raise ValueError("Invalid filename")
+        return os.path.join(self.path, safe_name)
+    
+    def list_files(self) -> list[str]:
+        return [
+            name for name in sorted(os.listdir(self.path))
+            if os.path.isfile(os.path.join(self.path, name))
+        ]
+    
+    def delete_file(self, filename: str) -> None:
+        os.remove(self.safe_path(filename))
 
 class ClientHandler(threading.Thread):
-    """
-    Handles a single client connection.
-    Each client is managed in its own thread.
-    """
+    """Receives packets from one client and dispatches them by opcode."""
     
     def __init__(self, sock: socket.socket, addr: tuple, logger: logging.Logger):
         super().__init__()
@@ -24,7 +49,7 @@ class ClientHandler(threading.Thread):
         self.log = logger
         self.user_id = 0
         self.username = ""
-        self.user_storage_path = ""
+        self.storage = None
         self.log.info(f"New connection from {self.addr}")
     
     def run(self):
@@ -36,146 +61,153 @@ class ClientHandler(threading.Thread):
                     self.log.info(f"Client {self.addr} disconnected.")
                     break
                 self.process_packet(packet)
-        except ConnectionError as e:
-            self.log.error(f"Connection error with {self.addr}: {e}")
+        except ConnectionError as exc:
+            self.log.error(f"Connection error with {self.addr}: {exc}")
         finally:
             self.sock.close()
             self.log.info(f"Connection closed for {self.addr}")
     
     def process_packet(self, packet: Packet):
         """Processes a received packet based on its opcode."""
-        self.log.debug(f"Received from {self.addr}: {packet}")
+        COMMANDS = {
+            Opcode.LOGIN: self.handle_login,
+            Opcode.LOGOUT: self.handle_logout,
+            Opcode.FILE_LIST: self.handle_file_list,
+            Opcode.FILE_UPLOAD: self.handle_file_upload,
+            Opcode.FILE_DOWNLOAD: self.handle_file_download,
+            Opcode.FILE_DELETE: self.handle_file_delete,
+        }
         
-        if packet.opcode == Opcode.LOGIN:
-            self.handle_login(packet)
-        elif packet.opcode == Opcode.LOGOUT:
-            self.handle_logout(packet)
-        elif packet.opcode == Opcode.FILE_LIST:
-            self.handle_file_list(packet)
-        elif packet.opcode == Opcode.FILE_UPLOAD:
-            self.handle_file_upload(packet)
-        elif packet.opcode == Opcode.FILE_DOWNLOAD:
-            self.handle_file_download(packet)
-        elif packet.opcode == Opcode.FILE_DELETE:
-            self.handle_file_delete(packet)
-        else:
+        self.log.debug(f"Received from {self.addr}: {packet}")
+        handler = COMMANDS[packet.opcode]
+        if handler is None:
             self.log.warning(f"Unknown or out-of-order opcode from {self.addr}: {packet.opcode.name}")
-            self._send_error("Invalid operation")
-
+            self._send_error(self, "Invalid operation")
+            return
+        handler(packet)
+    
     def handle_login(self, packet: Packet):
-        """Handles a LOGIN request."""
         try:
             self.username = packet.payload.decode("utf-8")
             self.user_id = packet.user_id
-            self.user_storage_path = os.path.join(config.STORAGE_DIR, self.username)
-            os.makedirs(self.user_storage_path, exist_ok=True)
+            self.storage = UserStorage(config.STORAGE_DIR, self.username)
             
             self.log.info(f"User '{self.username}' (ID: {self.user_id}) logged in from {self.addr}.")
-            ack_packet = Packet(Opcode.ACK, self.user_id, Opcode.LOGIN.to_bytes(2, "big"))
-            send_packet(self.sock, ack_packet)
-        except Exception as e:
-            self.log.error(f"Error during login for {self.addr}: {e}")
-            self._send_error(str(e))
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, Opcode.LOGIN.to_bytes(2, "big")))
+        except Exception as exc:
+            self.log.error(f"Error during login for {self.addr}: {exc}")
+            self._send_error(str(exc))
     
     def handle_logout(self, packet: Packet):
-        """Handles a LOGOUT request."""
         self.log.info(f"User '{self.username}' logged out from {self.addr}.")
-        ack_packet = Packet(Opcode.ACK, self.user_id, b"logout")
-        send_packet(self.sock, ack_packet)
+        send_packet(self.sock, Packet(Opcode.ACK, self.user_id, b"logout"))
     
     def handle_file_list(self, packet: Packet):
-        """Returns a newline-delimited list of files for the current user."""
-        if not self.username:
-            self._send_error("Please login first")
+        if not self._require_login():
             return
         
-        files = [
-            name for name in sorted(os.listdir(self.user_storage_path))
-            if os.path.isfile(os.path.join(self.user_storage_path, name))
-        ]
-        payload = "\n".join(files).encode("utf-8")
-        response = Packet(Opcode.FILE_LIST_RESP, self.user_id, payload)
-        send_packet(self.sock, response)
+        start_time = time.perf_counter()
+        payload = "\n".join(self.storage.list_files()).encode("utf-8")
+        send_packet(self.sock, Packet(Opcode.FILE_LIST_RESP, self.user_id, payload))
+        self._log_transfer("LIST", "-", 0, start_time)
     
     def handle_file_upload(self, packet: Packet):
-        """Receives a file from the client and stores it in the user's folder."""
-        if not self.username:
-            self._send_error("Please login first")
+        if not self._require_login():
             return
         
+        start_time = time.perf_counter()
+        filename = ""
+        received = 0
         try:
-            filename, file_data = self._decode_file_payload(packet.payload)
-            target_path = self._safe_path(filename)
-            with open(target_path, "wb") as handle:
-                handle.write(file_data)
-            self.log.info(f"Uploaded '{filename}' for user '{self.username}'.")
-            ack_packet = Packet(Opcode.ACK, self.user_id, f"uploaded:{filename}".encode("utf-8"))
-            send_packet(self.sock, ack_packet)
-        except Exception as e:
-            self.log.error(f"Upload failed for {self.addr}: {e}")
-            self._send_error(str(e))
+            filename, total_size, expected_checksum = decode_file_metadata(packet.payload)
+            target_path = self.storage.safe_path(filename)
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, Opcode.FILE_UPLOAD.to_bytes(2, "big")))
+            
+            received, actual_checksum = receive_file_chunks(
+                self.sock,
+                target_path,
+                total_size,
+                expected_checksum,
+            )
+            
+            self._log_transfer("UPLOAD", filename, received, start_time)
+            ack_payload = f"uploaded:{filename}:sha256:{actual_checksum}".encode("utf-8")
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
+        except Exception as exc:
+            self.log.error(f"Upload failed for {self.addr}: {exc}")
+            self._log_transfer("UPLOAD_FAILED", filename or "-", received, start_time)
+            self._send_error(str(exc))
     
     def handle_file_download(self, packet: Packet):
-        """Sends a requested file back to the client."""
-        if not self.username:
-            self._send_error("Please login first")
+        if not self._require_login():
             return
         
+        start_time = time.perf_counter()
+        filename = ""
+        sent = 0
         try:
             filename = packet.payload.decode("utf-8")
-            target_path = self._safe_path(filename)
-            with open(target_path, "rb") as handle:
-                file_data = handle.read()
-            response = Packet(Opcode.FILE_CHUNK, self.user_id, file_data)
-            send_packet(self.sock, response)
+            target_path = self.storage.safe_path(filename)
+            metadata_payload, _, _ = build_file_metadata_payload(target_path, filename)
+            send_packet(self.sock, Packet(Opcode.FILE_UPLOAD, self.user_id, metadata_payload))
+            
+            sent = send_file_chunks(self.sock, self.user_id, target_path)
+            self._log_transfer("DOWNLOAD", filename, sent, start_time)
         except FileNotFoundError:
             self._send_error(f"File '{filename}' not found")
-        except Exception as e:
-            self.log.error(f"Download failed for {self.addr}: {e}")
-            self._send_error(str(e))
+            self._log_transfer("DOWNLOAD_FAILED", filename or "-", sent, start_time)
+        except Exception as exc:
+            self.log.error(f"Download failed for {self.addr}: {exc}")
+            self._log_transfer("DOWNLOAD_FAILED", filename or "-", sent, start_time)
+            self._send_error(str(exc))
     
     def handle_file_delete(self, packet: Packet):
-        """Deletes a file from the user's storage folder."""
-        if not self.username:
-            self._send_error("Please login first")
+        if not self._require_login():
             return
         
         try:
             filename = packet.payload.decode("utf-8")
-            target_path = self._safe_path(filename)
-            os.remove(target_path)
+            self.storage.delete_file(filename)
             self.log.info(f"Deleted '{filename}' for user '{self.username}'.")
-            ack_packet = Packet(Opcode.ACK, self.user_id, f"deleted:{filename}".encode("utf-8"))
-            send_packet(self.sock, ack_packet)
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, f"deleted:{filename}".encode("utf-8")))
         except FileNotFoundError:
             self._send_error(f"File '{filename}' not found")
-        except Exception as e:
-            self.log.error(f"Delete failed for {self.addr}: {e}")
-            self._send_error(str(e))
-    
-    def _safe_path(self, filename: str) -> str:
-        safe_name = os.path.basename(filename)
-        if not safe_name:
-            raise ValueError("Invalid filename")
-        return os.path.join(self.user_storage_path, safe_name)
-    
-    def _decode_file_payload(self, payload: bytes):
-        if len(payload) < 4:
-            raise ValueError("Missing filename length")
-        filename_len = struct.unpack(">I", payload[:4])[0]
-        if len(payload) < 4 + filename_len:
-            raise ValueError("Payload truncated")
-        filename = payload[4:4 + filename_len].decode("utf-8")
-        file_data = payload[4 + filename_len:]
-        return filename, file_data
+        except Exception as exc:
+            self.log.error(f"Delete failed for {self.addr}: {exc}")
+            self._send_error(str(exc))
     
     def _send_error(self, message: str):
-        error_packet = Packet(Opcode.ERROR, self.user_id, message.encode("utf-8"))
-        send_packet(self.sock, error_packet)
+        try:
+            send_packet(self.sock, Packet(Opcode.ERROR, self.user_id, message.encode("utf-8")))
+        except ConnectionError:
+            self.log.warning(f"Could not send error to disconnected client {self.addr}: {message}")
+    
+    def _log_transfer(self, command: str, filename: str, byte_count: int, start_time: float):
+        elapsed = max(time.perf_counter() - start_time, 0.000001)
+        speed_kbps = (byte_count / 1024) / elapsed
+        self.log.info(
+            "client=%s:%s user=%s command=%s file=%s bytes=%s elapsed=%.3fs speed=%.2fKB/s",
+            self.addr[0],
+            self.addr[1],
+            self.username or "-",
+            command,
+            filename,
+            byte_count,
+            elapsed,
+            speed_kbps,
+        )
+    
+    def _require_login(self) -> bool:
+        if self.username:
+            return True
+        self._send_error("Please login first")
+        return False
 
 
-def main():
-    """Starts the server and listens for incoming connections."""
+if __name__ == "__main__":
+    os.makedirs(config.STORAGE_DIR, exist_ok=True)
+    
+    # Starts the server and listens for incoming connections.
     server_log = setup_server_logger()
     server_log.info("Server starting...")
     
@@ -189,8 +221,3 @@ def main():
         client_sock, client_addr = server_socket.accept()
         handler = ClientHandler(client_sock, client_addr, server_log)
         handler.start()
-
-
-if __name__ == "__main__":
-    os.makedirs(config.STORAGE_DIR, exist_ok=True)
-    main()
