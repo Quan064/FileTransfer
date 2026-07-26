@@ -1,6 +1,5 @@
 import hashlib
 import os
-import time
 
 import common.config as config
 from common.checksum import calculate_checksum
@@ -24,7 +23,6 @@ def send_file_chunks(sock, user_id: int, path: str, chunk_size: int = config.CHU
             if not chunk:
                 break
             send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(sent, chunk)))
-            time.sleep(0)  # Yield CPU to other processes to prevent UI lag
             sent += len(chunk)
     return sent
 
@@ -47,7 +45,6 @@ def receive_file_chunks(sock, target_path: str, total_size: int, expected_checks
             handle.write(chunk)
             hash_obj.update(chunk)
             received += len(chunk)
-            time.sleep(0)  # Yield CPU to other processes to prevent UI lag
     
     actual_checksum = hash_obj.hexdigest()
     if actual_checksum != expected_checksum:

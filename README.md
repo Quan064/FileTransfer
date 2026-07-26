@@ -26,11 +26,11 @@ graph TD
     end
 
     subgraph "Protocol Layer"
-        P[Packet Framing <br/> opcode.py, packet.py, framing.py]
+        P[Packet Framing <br/> opcode.py, packet.py, framing.py, payloads.py]
     end
 
     subgraph "Shared Components"
-        U[Utilities <br/> checksum.py, logger.py, utils.py]
+        U[Utilities <br/> checksum.py, logger.py, config.py]
         FS[(File System <br/> ./storage/)]
     end
 

@@ -51,6 +51,20 @@ class Client:
         print("[!] Login failed. Server response:", response)
         return False
     
+    def logout(self, username: str | None = None, user_id: int | None = None):
+        """Logs out from the server and closes the connection."""
+        if not self._ensure_login(username, user_id):
+            return False
+        
+        send_packet(self.sock, Packet(Opcode.LOGOUT, self.user_id, b""))
+        response = recv_packet(self.sock)
+        if response and response.opcode == Opcode.ACK:
+            print("[*] Logged out.")
+            return True
+        
+        print("[!] Logout failed.", self._format_response(response))
+        return False
+    
     def list_files(self, username: str | None = None, user_id: int | None = None):
         """Requests the file list from the server."""
         if not self._ensure_login(username, user_id):
@@ -142,20 +156,6 @@ class Client:
             return True
         
         print("[!] Delete failed.", self._format_response(response))
-        return False
-    
-    def logout(self, username: str | None = None, user_id: int | None = None):
-        """Logs out from the server and closes the connection."""
-        if not self._ensure_login(username, user_id):
-            return False
-        
-        send_packet(self.sock, Packet(Opcode.LOGOUT, self.user_id, b""))
-        response = recv_packet(self.sock)
-        if response and response.opcode == Opcode.ACK:
-            print("[*] Logged out.")
-            return True
-        
-        print("[!] Logout failed.", self._format_response(response))
         return False
     
     def close(self):
@@ -263,11 +263,13 @@ def run_interactive_session(client: Client, username: str, user_id: int):
     client.close()
 
 def print_usage():
-    print("Usage: python client.py <login|upload|list|download|delete> ...")
-    print("  login <username> [user_id] [--interactive]")
-    print("  list [username] [user_id]")
-    print("  upload <local_path> [remote_name] [username] [user_id]")
-    print("  download <remote_name> <local_path> [username] [user_id]")
+    print("Usage: python client.py <login|upload|list|download|delete> ...           ")
+    print("  login                               <username> [user_id] [--interactive]")
+    print("  list                                [username] [user_id]                ")
+    print("  upload   <local_path> [remote_name] [username] [user_id]                ")
+    print("  download <remote_name> <local_path> [username] [user_id]                ")
+    print("  delete   <remote_name>              [username] [user_id]                ")
+    print("  logout                                                                  ")
 
 
 if __name__ == "__main__":
@@ -282,7 +284,7 @@ if __name__ == "__main__":
     try:
         if command == "login":
             if len(sys.argv) < 3:
-                raise ValueError("Usage: python client.py login <username> [user_id] [--interactive]")
+                raise ValueError("[!] Usage: python client.py login <username> [user_id] [--interactive]")
             username = sys.argv[2]
             user_id = int(sys.argv[3]) if len(sys.argv) > 3 else None
             interactive = "--interactive" in sys.argv[4:]
@@ -291,7 +293,7 @@ if __name__ == "__main__":
         
         elif command == "upload":
             if len(sys.argv) < 3:
-                raise ValueError("Usage: python client.py upload <local_path> [remote_name] [username] [user_id]")
+                raise ValueError("[!] Usage: python client.py upload <local_path> [remote_name] [username] [user_id]")
             local_path = sys.argv[2]
             remote_name = sys.argv[3] if len(sys.argv) > 3 else None
             username = sys.argv[4] if len(sys.argv) > 4 else None
@@ -305,7 +307,7 @@ if __name__ == "__main__":
         
         elif command == "download":
             if len(sys.argv) < 4:
-                raise ValueError("Usage: python client.py download <remote_name> <local_path> [username] [user_id]")
+                raise ValueError("[!] Usage: python client.py download <remote_name> <local_path> [username] [user_id]")
             remote_name = sys.argv[2]
             local_path = sys.argv[3]
             username = sys.argv[4] if len(sys.argv) > 4 else None
@@ -314,7 +316,7 @@ if __name__ == "__main__":
         
         elif command == "delete":
             if len(sys.argv) < 3:
-                raise ValueError("Usage: python client.py delete <remote_name> [username] [user_id]")
+                raise ValueError("[!] Usage: python client.py delete <remote_name> [username] [user_id]")
             remote_name = sys.argv[2]
             username = sys.argv[3] if len(sys.argv) > 3 else None
             user_id = int(sys.argv[4]) if len(sys.argv) > 4 else None
@@ -323,8 +325,8 @@ if __name__ == "__main__":
         else:
             print_usage()
     
-    except ValueError as exc:
-        print(f"[!] {exc}")
+    except Exception as error:
+        print(error)
 
     finally:
         client.close()
