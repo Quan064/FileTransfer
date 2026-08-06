@@ -8,7 +8,6 @@ import time
 import common.config as config
 from common.storage import UserStorage
 from common.logger import setup_server_logger
-from common.logger import setup_server_logger
 
 from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
