@@ -6,37 +6,17 @@ import threading
 import time
 
 import common.config as config
+from common.storage import UserStorage
 from common.logger import setup_server_logger
+from common.logger import setup_server_logger
+
 from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payloads import decode_file_metadata
+from protocol.payloads import decode_file_metadata, encode_struct_data
+
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
-
-class UserStorage:
-    """File-system namespace for one logged-in user."""
-    
-    def __init__(self, root_dir: str, username: str):
-        self.root_dir = root_dir
-        self.username = username
-        self.path = os.path.join(root_dir, username)
-        os.makedirs(self.path, exist_ok=True)
-    
-    def safe_path(self, filename: str) -> str:
-        safe_name = os.path.basename(filename)
-        if not safe_name:
-            raise ValueError("Invalid filename")
-        return os.path.join(self.path, safe_name)
-    
-    def list_files(self) -> list[str]:
-        return [
-            name for name in sorted(os.listdir(self.path))
-            if os.path.isfile(os.path.join(self.path, name))
-        ]
-    
-    def delete_file(self, filename: str) -> None:
-        os.remove(self.safe_path(filename))
 
 class ClientHandler(threading.Thread):
     """Receives packets from one client and dispatches them by opcode."""
@@ -120,13 +100,28 @@ class ClientHandler(threading.Thread):
         try:
             filename, total_size, expected_checksum = decode_file_metadata(packet.payload)
             target_path = self.storage.safe_path(filename)
-            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, Opcode.FILE_UPLOAD.to_bytes(2, "big")))
+            
+            offset = 0
+            if os.path.exists(target_path):
+                current_size = os.path.getsize(target_path)
+                if current_size == total_size:
+                    self._send_error(f"File '{filename}' with the same size already exists.")
+                    return
+                elif current_size > total_size:
+                    self._send_error(f"Existing file '{filename}' is larger than the new file.")
+                    return
+                offset = current_size
+            
+            ack_payload = encode_struct_data('>HQ', Opcode.FILE_UPLOAD.value, offset)
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
             
             received, actual_checksum = receive_file_chunks(
                 self.sock,
                 target_path,
                 total_size,
                 expected_checksum,
+                offset=offset,
+                progress_callback=None
             )
             
             self._log_transfer("UPLOAD", filename, received, start_time)

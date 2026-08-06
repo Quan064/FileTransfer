@@ -3,6 +3,7 @@ import os
 
 import common.config as config
 from common.checksum import calculate_checksum
+
 from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
@@ -15,22 +16,45 @@ def build_file_metadata_payload(path: str, filename: str) -> tuple[bytes, int, s
     return encode_file_metadata(filename, total_size, checksum), total_size, checksum
 
 
-def send_file_chunks(sock, user_id: int, path: str, chunk_size: int = config.CHUNK_SIZE) -> int:
+def _default_progress_callback(bytes_processed: int, total_size: int):
+    """A simple default callback to print progress to the console."""
+    if total_size == 0:
+        return
+    percentage = (bytes_processed / total_size) * 100
+    print(f"\rProgress: {bytes_processed}/{total_size} bytes ({percentage:.2f}%)", end="")
+    if bytes_processed == total_size:
+        print()
+
+
+def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size: int = config.CHUNK_SIZE, progress_callback = _default_progress_callback) -> int:
     sent = 0
+    total_size = os.path.getsize(path)
     with open(path, "rb") as handle:
+        handle.seek(offset)
+        sent = offset
         while True:
             chunk = handle.read(chunk_size)
             if not chunk:
                 break
-            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(sent, chunk)))
+            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(offset + sent, chunk)))
             sent += len(chunk)
+            if progress_callback:
+                progress_callback(sent, total_size)
     return sent
 
 
-def receive_file_chunks(sock, target_path: str, total_size: int, expected_checksum: str) -> tuple[int, str]:
-    received = 0
+def receive_file_chunks(sock, target_path: str, total_size: int, expected_checksum: str, offset: int = 0, progress_callback = _default_progress_callback) -> tuple[int, str]:
+    received = offset
     hash_obj = hashlib.sha256()
-    with open(target_path, "wb") as handle:
+    
+    if offset > 0 and os.path.exists(target_path):
+        with open(target_path, "rb") as f:
+            if os.path.getsize(target_path) > offset:
+                raise ValueError("Existing file is larger than resume offset")
+            hash_obj.update(f.read(offset))
+    
+    with open(target_path, "r+b" if offset > 0 else "wb") as handle:
+        handle.seek(offset)
         while received < total_size:
             chunk_packet = recv_packet(sock)
             if chunk_packet is None:
@@ -39,12 +63,11 @@ def receive_file_chunks(sock, target_path: str, total_size: int, expected_checks
                 raise ValueError(f"Expected FILE_CHUNK, got {chunk_packet.opcode.name}")
             
             offset, chunk = decode_file_chunk(chunk_packet.payload)
-            if offset != received:
-                raise ValueError(f"Unexpected chunk offset: got {offset}, expected {received}")
-            
             handle.write(chunk)
             hash_obj.update(chunk)
             received += len(chunk)
+            if progress_callback:
+                progress_callback(received, total_size)
     
     actual_checksum = hash_obj.hexdigest()
     if actual_checksum != expected_checksum:

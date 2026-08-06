@@ -5,10 +5,12 @@ import json
 import socket
 
 import common.config as config
+
 from protocol.framing import recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payloads import decode_file_metadata
+from protocol.payloads import decode_file_metadata, decode_struct_data
+
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".client_state.json")
@@ -103,7 +105,14 @@ class Client:
             print("[!] Upload failed.", self._format_response(response))
             return False
         
-        send_file_chunks(self.sock, self.user_id, local_path)
+        acked_opcode_val, next_offset = decode_struct_data('>HQ', response.payload)
+        acked_opcode = Opcode(acked_opcode_val)
+        if acked_opcode != Opcode.FILE_UPLOAD:
+            print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
+            return False
+        
+        print(f"[*] Server is ready. Starting upload from offset {next_offset}...")
+        send_file_chunks(self.sock, self.user_id, local_path, offset=next_offset)
         
         response = recv_packet(self.sock)
         if response and response.opcode == Opcode.ACK:
@@ -129,6 +138,12 @@ class Client:
             filename, total_size, expected_checksum = decode_file_metadata(response.payload)
             target_path = self._resolve_download_path(local_path, filename or remote_name)
             target_dir = os.path.dirname(target_path)
+            
+            current_size = 0
+            if os.path.exists(target_path):
+                current_size = os.path.getsize(target_path)
+            print(f"[*] Starting download to '{target_path}'. Resuming from {current_size} bytes.")
+            
             if target_dir:
                 os.makedirs(target_dir, exist_ok=True)
             _, actual_checksum = receive_file_chunks(
