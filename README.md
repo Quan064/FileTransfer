@@ -147,10 +147,10 @@ Các hằng số trong `config.py` được chọn dựa trên sự cân bằng 
         -   **Nếu quá lớn**: Sẽ chiếm nhiều bộ nhớ đệm và có thể làm cho việc giới hạn băng thông (rate limiting) kém chính xác hơn, cũng như khiến thanh tiến trình (progress bar) cập nhật không mượt mà.
     -   **Kết luận**: 4KB là một giá trị cân bằng, hiệu quả cho hầu hết các điều kiện mạng thông thường.
 
--   **`SERVER_UPLOAD_RATE_KBPS = 10240` và `CLIENT_UPLOAD_RATE_KBPS = 5120`**
+-   **`SERVER_UPLOAD_RATE_KBPS = 1024` và `CLIENT_UPLOAD_RATE_KBPS = 512`**
     -   **Lý do**: Các giá trị này được đặt ra để minh họa cho tính năng giới hạn băng thông và đảm bảo sự công bằng giữa các client.
-    -   **`SERVER_UPLOAD_RATE_KBPS` (10MB/s)**: Giới hạn tốc độ server gửi dữ liệu (client download). Mức này đủ nhanh để mang lại trải nghiệm tốt nhưng cũng đủ thấp để một client không chiếm hết toàn bộ băng thông của server.
-    -   **`CLIENT_UPLOAD_RATE_KBPS` (5KB/s)**: Giới hạn tốc độ client gửi dữ liệu. Mức này thấp hơn vì trong thực tế, băng thông upload của người dùng thường hạn chế hơn download. Việc giới hạn giúp client không bị "treo" các tác vụ mạng khác.
+    -   **`SERVER_UPLOAD_RATE_KBPS` (1MB/s)**: Giới hạn tốc độ server gửi dữ liệu (client download). Mức này đủ nhanh để mang lại trải nghiệm tốt nhưng cũng đủ thấp để một client không chiếm hết toàn bộ băng thông của server.
+    -   **`CLIENT_UPLOAD_RATE_KBPS` (512KB/s)**: Giới hạn tốc độ client gửi dữ liệu. Mức này thấp hơn vì trong thực tế, băng thông upload của người dùng thường hạn chế hơn download. Việc giới hạn giúp client không bị "treo" các tác vụ mạng khác.
 
 -   **`MAX_CONCURRENT_CLIENTS = 50`**
     -   **Lý do**: Đây là một biện pháp quản lý tài nguyên để ngăn server bị quá tải. Mỗi client kết nối sẽ tiêu tốn một luồng (thread), bộ nhớ và một file descriptor.
