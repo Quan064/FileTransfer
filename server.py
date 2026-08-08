@@ -19,18 +19,22 @@ from transfer.file_transfer import build_file_metadata_payload, receive_file_chu
 class ClientHandler(threading.Thread):
     """Receives packets from one client and dispatches them by opcode."""
     
-    def __init__(self, sock: socket.socket, addr: tuple, logger: logging.Logger):
+    def __init__(self, sock: socket.socket, addr: tuple, logger: logging.Logger, semaphore: threading.Semaphore | None = None):
         super().__init__()
         self.sock = sock
         self.addr = addr
         self.log = logger
+        self.semaphore = semaphore
         self.user_id = 0
         self.username = ""
         self.storage = None
         self.log.info(f"New connection from {self.addr}")
     
     def run(self):
-        """Main loop to receive and process packets from the client."""
+        """
+        Main loop to receive and process packets from the client.
+        Releases the semaphore when the connection is closed.
+        """
         try:
             while True:
                 packet = recv_packet(self.sock)
@@ -43,6 +47,8 @@ class ClientHandler(threading.Thread):
         finally:
             self.sock.close()
             self.log.info(f"Connection closed for {self.addr}")
+            if self.semaphore:
+                self.semaphore.release()
     
     def process_packet(self, packet: Packet):
         """Processes a received packet based on its opcode."""
@@ -212,7 +218,22 @@ if __name__ == "__main__":
     server_socket.listen(5)
     server_log.info(f"Server listening on {config.HOST}:{config.PORT}")
     
+    # Create a semaphore to limit the number of concurrent clients
+    client_semaphore = threading.Semaphore(config.MAX_CONCURRENT_CLIENTS)
+    
     while True:
         client_sock, client_addr = server_socket.accept()
-        handler = ClientHandler(client_sock, client_addr, server_log)
-        handler.start()
+        
+        # Try to acquire a semaphore slot without blocking.
+        if client_semaphore.acquire(blocking=False):
+            handler = ClientHandler(client_sock, client_addr, server_log, semaphore=client_semaphore)
+            handler.start()
+        
+        # If no slots are available, reject the connection.
+        else:
+            server_log.warning(f"Connection rejected from {client_addr}: server at full capacity.")
+            try:
+                error_packet = Packet(Opcode.ERROR, 0, b"Server at full capacity. Please try again later.")
+                send_packet(client_sock, error_packet)
+            finally:
+                client_sock.close()

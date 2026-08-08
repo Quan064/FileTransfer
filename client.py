@@ -50,7 +50,7 @@ class Client:
             print(f"[*] Login successful as '{username}'.")
             return True
         
-        print("[!] Login failed. Server response:", response)
+        print("[!] Login failed. Server response:", self._format_response(response))
         return False
     
     def logout(self, username: str | None = None, user_id: int | None = None):
