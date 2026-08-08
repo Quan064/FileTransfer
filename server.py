@@ -8,8 +8,7 @@ import time
 import common.config as config
 from common.storage import UserStorage
 from common.logger import setup_server_logger
-
-from protocol.framing import recv_packet, send_packet
+from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
 from protocol.payloads import decode_file_metadata, encode_struct_data
@@ -144,7 +143,10 @@ class ClientHandler(threading.Thread):
             metadata_payload, _, _ = build_file_metadata_payload(target_path, filename)
             send_packet(self.sock, Packet(Opcode.FILE_UPLOAD, self.user_id, metadata_payload))
             
-            sent = send_file_chunks(self.sock, self.user_id, target_path)
+            # Create a rate limiter for this download operation.
+            limiter = RateLimiter(config.SERVER_UPLOAD_RATE_KBPS)
+            
+            sent = send_file_chunks(self.sock, self.user_id, target_path, limiter=limiter)
             self._log_transfer("DOWNLOAD", filename, sent, start_time)
         except FileNotFoundError:
             self._send_error(f"File '{filename}' not found")

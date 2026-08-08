@@ -6,7 +6,7 @@ import socket
 
 import common.config as config
 
-from protocol.framing import recv_packet, send_packet
+from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
 from protocol.payloads import decode_file_metadata, decode_struct_data
@@ -110,8 +110,11 @@ class Client:
             print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
             return False
         
+        # Create a rate limiter for this upload operation.
+        limiter = RateLimiter(config.CLIENT_UPLOAD_RATE_KBPS)
+        
         print(f"[*] Server is ready. Starting upload from offset {next_offset}...")
-        send_file_chunks(self.sock, self.user_id, local_path, offset=next_offset)
+        send_file_chunks(self.sock, self.user_id, local_path, offset=next_offset, limiter=limiter)
         
         response = recv_packet(self.sock)
         if response and response.opcode == Opcode.ACK:

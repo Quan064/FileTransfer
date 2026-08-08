@@ -4,7 +4,7 @@ import os
 import common.config as config
 from common.checksum import calculate_checksum
 
-from protocol.framing import recv_packet, send_packet
+from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
 from protocol.payloads import decode_file_chunk, encode_file_chunk, encode_file_metadata
@@ -26,7 +26,7 @@ def _default_progress_callback(bytes_processed: int, total_size: int):
         print()
 
 
-def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size: int = config.CHUNK_SIZE, progress_callback = _default_progress_callback) -> int:
+def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size: int = config.CHUNK_SIZE, progress_callback = _default_progress_callback, limiter: RateLimiter | None = None) -> int:
     total_size = os.path.getsize(path)
     with open(path, "rb") as handle:
         handle.seek(offset)
@@ -35,7 +35,7 @@ def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size:
             chunk = handle.read(chunk_size)
             if not chunk:
                 break
-            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(current_pos, chunk)))
+            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(current_pos, chunk)), limiter=limiter)
             current_pos += len(chunk)
             if progress_callback:
                 progress_callback(current_pos, total_size)
