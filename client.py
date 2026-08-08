@@ -88,6 +88,7 @@ class Client:
             print("[!] Please login first: python client.py login <username> <user_id>")
             return False
         
+        # Check if the local file exists.
         if not os.path.isfile(local_path):
             print(f"[!] File not found: {local_path}")
             return False
@@ -97,9 +98,11 @@ class Client:
             print("[!] Invalid filename.")
             return False
         
+        # Build the metadata payload (filename, size, checksum) and initialize handshake.
         payload, _, checksum = build_file_metadata_payload(local_path, filename)
         send_packet(self.sock, Packet(Opcode.FILE_UPLOAD, self.user_id, payload))
         
+        # Wait for the server's response which contains the offset for resuming a partial upload.
         response = recv_packet(self.sock)
         if not response or response.opcode != Opcode.ACK:
             print("[!] Upload failed.", self._format_response(response))
@@ -110,9 +113,10 @@ class Client:
             print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
             return False
         
-        # Create a rate limiter for this upload operation.
+        # Create RateLimiter to throttle the upload speed according to the configuration.
         limiter = RateLimiter(config.CLIENT_UPLOAD_RATE_KBPS)
         
+        # Start sending file chunks, beginning from the received offset.
         print(f"[*] Server is ready. Starting upload from offset {next_offset}...")
         send_file_chunks(self.sock, self.user_id, local_path, offset=next_offset, limiter=limiter)
         
@@ -130,22 +134,28 @@ class Client:
             print("[!] Please login first: python client.py login <username> <user_id>")
             return False
         
+        # Send a download request to the server with the remote filename.
         send_packet(self.sock, Packet(Opcode.FILE_DOWNLOAD, self.user_id, remote_name.encode("utf-8")))
+        
+        # Wait for the server's response, which should contain the file's metadata.
         response = recv_packet(self.sock)
         if not response or response.opcode != Opcode.FILE_UPLOAD:
             print("[!] Download failed.", self._format_response(response))
             return False
         
         try:
+            # Decode the metadata to get the filename, total size, and expected checksum.
             filename, total_size, expected_checksum = decode_file_metadata(response.payload)
             target_path = self._resolve_download_path(local_path, filename or remote_name)
             target_dir = os.path.dirname(target_path)
             
+            # Check if a partial file exists locally to support resuming the download.
             current_size = 0
             if os.path.exists(target_path):
                 current_size = os.path.getsize(target_path)
             print(f"[*] Starting download to '{target_path}'. Resuming from {current_size} bytes.")
             
+            # Start receiving file chunks from the server and writing them to the target path.
             if target_dir:
                 os.makedirs(target_dir, exist_ok=True)
             _, actual_checksum = receive_file_chunks(
@@ -153,6 +163,7 @@ class Client:
                 target_path,
                 total_size,
                 expected_checksum,
+                offset=current_size,
             )
         except (ConnectionError, OSError, ValueError) as exc:
             print(f"[!] Download failed: {exc}")

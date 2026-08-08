@@ -103,9 +103,11 @@ class ClientHandler(threading.Thread):
         filename = ""
         received = 0
         try:
+            # Decode the initial metadata packet from the client (filename, total size, checksum).
             filename, total_size, expected_checksum = decode_file_metadata(packet.payload)
             target_path = self.storage.safe_path(filename)
             
+            # Check for an existing partial file to support upload resuming.
             offset = 0
             if os.path.exists(target_path):
                 current_size = os.path.getsize(target_path)
@@ -117,21 +119,23 @@ class ClientHandler(threading.Thread):
                     return
                 offset = current_size
             
+            # Send an ACK packet which contains offset.
             ack_payload = encode_struct_data('>HQ', Opcode.FILE_UPLOAD.value, offset)
             send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
             
+            # Receiving file chunks from the client, starting from the specified offset.
             received, actual_checksum = receive_file_chunks(
                 self.sock,
                 target_path,
                 total_size,
                 expected_checksum,
                 offset=offset,
-                progress_callback=None
             )
             
             self._log_transfer("UPLOAD", filename, received, start_time)
             ack_payload = f"uploaded:{filename}:sha256:{actual_checksum}".encode("utf-8")
             send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
+        
         except Exception as exc:
             self.log.error(f"Upload failed for {self.addr}: {exc}")
             self._log_transfer("UPLOAD_FAILED", filename or "-", received, start_time)
@@ -145,19 +149,25 @@ class ClientHandler(threading.Thread):
         filename = ""
         sent = 0
         try:
+            # Get the requested filename from the client's packet.
             filename = packet.payload.decode("utf-8")
             target_path = self.storage.safe_path(filename)
+            
+            # Send a metadata packet to the client so it knows the file's name, size, and checksum.
             metadata_payload, _, _ = build_file_metadata_payload(target_path, filename)
             send_packet(self.sock, Packet(Opcode.FILE_UPLOAD, self.user_id, metadata_payload))
             
-            # Create a rate limiter for this download operation.
+            # Create a rate limiter to throttle the server's upload speed (client's download speed).
             limiter = RateLimiter(config.SERVER_UPLOAD_RATE_KBPS)
             
+            # Start streaming the file chunks to the client.
             sent = send_file_chunks(self.sock, self.user_id, target_path, limiter=limiter)
             self._log_transfer("DOWNLOAD", filename, sent, start_time)
+        
         except FileNotFoundError:
             self._send_error(f"File '{filename}' not found")
             self._log_transfer("DOWNLOAD_FAILED", filename or "-", sent, start_time)
+        
         except Exception as exc:
             self.log.error(f"Download failed for {self.addr}: {exc}")
             self._log_transfer("DOWNLOAD_FAILED", filename or "-", sent, start_time)
