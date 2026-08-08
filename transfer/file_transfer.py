@@ -7,10 +7,11 @@ from common.checksum import calculate_checksum
 from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payloads import decode_file_chunk, encode_file_chunk, encode_file_metadata
+from protocol.payload import decode_file_chunk, encode_file_chunk, encode_file_metadata
 
 
 def build_file_metadata_payload(path: str, filename: str) -> tuple[bytes, int, str]:
+    """Generates the metadata payload for a file."""
     total_size = os.path.getsize(path)
     checksum = calculate_checksum(path)
     return encode_file_metadata(filename, total_size, checksum), total_size, checksum
@@ -27,6 +28,7 @@ def _default_progress_callback(bytes_processed: int, total_size: int):
 
 
 def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size: int = config.CHUNK_SIZE, progress_callback = _default_progress_callback, limiter: RateLimiter | None = None) -> int:
+    """Reads a file and sends it over the socket in chunks."""
     total_size = os.path.getsize(path)
     with open(path, "rb") as handle:
         handle.seek(offset)
@@ -43,6 +45,7 @@ def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size:
 
 
 def receive_file_chunks(sock, target_path: str, total_size: int, expected_checksum: str, offset: int = 0, progress_callback = _default_progress_callback) -> tuple[int, str]:
+    """Receives file chunks from a socket and writes them to a file."""
     received = offset
     hash_obj = hashlib.sha256()
     

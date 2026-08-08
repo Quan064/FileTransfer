@@ -9,7 +9,7 @@ import common.config as config
 from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payloads import decode_file_metadata, decode_struct_data
+from protocol.payload import decode_file_metadata, decode_struct_data
 
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 

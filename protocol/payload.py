@@ -2,6 +2,7 @@ import struct
 
 
 def encode_file_metadata(filename: str, total_size: int, checksum: str) -> bytes:
+    """Encodes file metadata into a byte string."""
     filename_bytes = filename.encode("utf-8")
     checksum_bytes = checksum.encode("ascii")
     return (
@@ -13,6 +14,7 @@ def encode_file_metadata(filename: str, total_size: int, checksum: str) -> bytes
 
 
 def decode_file_metadata(payload: bytes):
+    """Decodes a byte string into file metadata."""
     if len(payload) < 2:
         raise ValueError("Missing filename length")
     filename_len = struct.unpack(">H", payload[:2])[0]
@@ -32,10 +34,12 @@ def decode_file_metadata(payload: bytes):
 
 
 def encode_file_chunk(offset: int, chunk: bytes) -> bytes:
+    """Encodes a file chunk with its offset into a byte string."""
     return struct.pack(">Q", offset) + chunk
 
 
 def decode_file_chunk(payload: bytes):
+    """Decodes a byte string into a file chunk and its offset."""
     if len(payload) < 8:
         raise ValueError("Chunk payload is missing offset")
     return struct.unpack(">Q", payload[:8])[0], payload[8:]
