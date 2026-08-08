@@ -106,8 +106,7 @@ class Client:
             return False
         
         acked_opcode_val, next_offset = decode_struct_data('>HQ', response.payload)
-        acked_opcode = Opcode(acked_opcode_val)
-        if acked_opcode != Opcode.FILE_UPLOAD:
+        if (acked_opcode := Opcode(acked_opcode_val)) != Opcode.FILE_UPLOAD:
             print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
             return False
         

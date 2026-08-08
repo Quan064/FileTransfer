@@ -27,20 +27,19 @@ def _default_progress_callback(bytes_processed: int, total_size: int):
 
 
 def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size: int = config.CHUNK_SIZE, progress_callback = _default_progress_callback) -> int:
-    sent = 0
     total_size = os.path.getsize(path)
     with open(path, "rb") as handle:
         handle.seek(offset)
-        sent = offset
+        current_pos = offset
         while True:
             chunk = handle.read(chunk_size)
             if not chunk:
                 break
-            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(offset + sent, chunk)))
-            sent += len(chunk)
+            send_packet(sock, Packet(Opcode.FILE_CHUNK, user_id, encode_file_chunk(current_pos, chunk)))
+            current_pos += len(chunk)
             if progress_callback:
-                progress_callback(sent, total_size)
-    return sent
+                progress_callback(current_pos, total_size)
+    return current_pos
 
 
 def receive_file_chunks(sock, target_path: str, total_size: int, expected_checksum: str, offset: int = 0, progress_callback = _default_progress_callback) -> tuple[int, str]:
@@ -71,7 +70,5 @@ def receive_file_chunks(sock, target_path: str, total_size: int, expected_checks
     
     actual_checksum = hash_obj.hexdigest()
     if actual_checksum != expected_checksum:
-        raise ValueError(
-            f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
-        )
+        raise ValueError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
     return received, actual_checksum
