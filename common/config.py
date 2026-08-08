@@ -5,7 +5,7 @@ STORAGE_DIR = "storage" # Directory on the server to store user files
 
 CHUNK_SIZE = 4096   # 4KB chunk size for file transfers
 
-SERVER_UPLOAD_RATE_KBPS = 1024 # Server's upload rate (client's download rate) in KB/s.
-CLIENT_UPLOAD_RATE_KBPS = 512  # Client's upload rate in KB/s.
+SERVER_UPLOAD_RATE_KBPS = 10240 # Server's upload rate (client's download rate) in KB/s. (10 MB/s)
+CLIENT_UPLOAD_RATE_KBPS = 5120  # Client's upload rate in KB/s. (5 MB/s)
 
 MAX_CONCURRENT_CLIENTS = 50 # Maximum number of clients the server can handle simultaneously.

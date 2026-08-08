@@ -124,12 +124,14 @@ class ClientHandler(threading.Thread):
             send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
             
             # Receiving file chunks from the client, starting from the specified offset.
+            start_time = time.perf_counter()
             received, actual_checksum = receive_file_chunks(
                 self.sock,
                 target_path,
                 total_size,
                 expected_checksum,
                 offset=offset,
+                progress_callback=None
             )
             
             self._log_transfer("UPLOAD", filename, received, start_time)
@@ -161,7 +163,8 @@ class ClientHandler(threading.Thread):
             limiter = RateLimiter(config.SERVER_UPLOAD_RATE_KBPS)
             
             # Start streaming the file chunks to the client.
-            sent = send_file_chunks(self.sock, self.user_id, target_path, limiter=limiter)
+            start_time = time.perf_counter()
+            sent = send_file_chunks(self.sock, self.user_id, target_path, limiter=limiter, progress_callback=None)
             self._log_transfer("DOWNLOAD", filename, sent, start_time)
         
         except FileNotFoundError:
@@ -195,7 +198,7 @@ class ClientHandler(threading.Thread):
             self.log.warning(f"Could not send error to disconnected client {self.addr}: {message}")
     
     def _log_transfer(self, command: str, filename: str, byte_count: int, start_time: float):
-        elapsed = max(time.perf_counter() - start_time, 0.000001)
+        elapsed = max(time.perf_counter() - start_time, 1e-7)
         speed_kbps = (byte_count / 1024) / elapsed
         self.log.info(
             "client=%s:%s user=%s command=%s file=%s bytes=%s elapsed=%.3fs speed=%.2fKB/s",
