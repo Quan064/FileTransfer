@@ -13,7 +13,7 @@ from protocol.payload import decode_file_metadata, decode_struct_data
 
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".client_state.json")
+STATE_FILE = os.path.join(os.path.dirname(__file__), ".client_state.json")
 
 
 class Client:
