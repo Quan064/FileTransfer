@@ -6,16 +6,7 @@ LOG_DIR = 'logs'
 LOG_FILE = os.path.join(LOG_DIR, 'server.log')
 
 def setup_server_logger(name: str = 'FileServer', level=logging.INFO) -> logging.Logger:
-    """
-    Sets up a logger that outputs to both a file and the console.
-    
-    Args:
-        name: The name for the logger.
-        level: The minimum logging level to capture (e.g., INFO, DEBUG).
-    
-    Returns:
-        A configured logging.Logger instance.
-    """
+    """Sets up a logger that outputs to both a file and the console."""
     # Create log directory if it doesn't exist
     os.makedirs(LOG_DIR, exist_ok=True)
     

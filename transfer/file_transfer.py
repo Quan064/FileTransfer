@@ -1,4 +1,3 @@
-import hashlib
 import os
 
 import common.config as config
@@ -47,13 +46,11 @@ def send_file_chunks(sock, user_id: int, path: str, offset: int = 0, chunk_size:
 def receive_file_chunks(sock, target_path: str, total_size: int, expected_checksum: str, offset: int = 0, progress_callback = _default_progress_callback) -> tuple[int, str]:
     """Receives file chunks from a socket and writes them to a file."""
     received = offset
-    hash_obj = hashlib.sha256()
     
     if offset > 0 and os.path.exists(target_path):
         with open(target_path, "rb") as f:
             if os.path.getsize(target_path) > offset:
                 raise ValueError("Existing file is larger than resume offset")
-            hash_obj.update(f.read(offset))
     
     with open(target_path, "r+b" if offset > 0 else "wb") as handle:
         handle.seek(offset)
@@ -66,12 +63,11 @@ def receive_file_chunks(sock, target_path: str, total_size: int, expected_checks
             
             offset, chunk = decode_file_chunk(chunk_packet.payload)
             handle.write(chunk)
-            hash_obj.update(chunk)
             received += len(chunk)
             if progress_callback:
                 progress_callback(received, total_size)
     
-    actual_checksum = hash_obj.hexdigest()
+    actual_checksum = calculate_checksum(target_path)
     if actual_checksum != expected_checksum:
         raise ValueError(f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}")
     return received, actual_checksum
