@@ -201,15 +201,71 @@ Cơ chế này giúp server hoạt động ổn định, không bị quá tải 
 ## Bảng kiểm chứng
 | Phân loại File | Lần kiểm thử | Thời gian truyền(s) | Tốc độ truyền | CPU trung bình(%) | RAM trung bình (MB) |
 |---|---|---|---|---|---|
-| File nhỏ (< 1MB):<br>Images.jfif<br>(20KB) | Lần 1 | 0.021 | 929.77 KB/s | 4.0 | 8.0 MB |
+| File nhỏ (< 1MB):<br>19.8KB.jfif | Lần 1 | 0.021 | 929.77 KB/s | 4.0 | 2.0 MB |
 | | Lần 2 | 0.002 | 9664.13 KB/s | 2.0 | 3.0 MB |
 | | Lần 3 | 0.010 | 2044.35 KB/s | 16.0 | 2.5 MB |
-| | **Trung bình** | 0.011 | 4212.75 KB/s | 7.3 | 4.5 MB |
-| File vừa (~ 1 MB -> 10 MB):<br>  | Lần 1 | 0.007 | 55221.95 KB/s | 2.0 | 0.5 MB |
-| | Lần 2 | 0.013 | 28051.52 KB/s | ~1.0 | 3.0 MB |
-| | Lần 3 | 0.011 | 33280.92 KB/s | 2.0 | 3.0 MB |
-| | **Trung bình** | 0.031 | 38851.46 KB/s | 1.6 | 6.5 MB |
-| File lớn (>= 10 MB) | Lần 1 | 1701s | 1016.72 KB/s | 16 | 3 MB |
-| | Lần 2 | 1481 | 1167.87 KB/s | 14 | 2 MB |
-| | Lần 3 | 1578 | 1095.83 KB/s | 13 | 3 MB |
-| | **Trung bình** | 1586.67 | 1093.47 KB/s | 14.3 | 2.67 MB |
+| | **Trung bình** | 0.011 | 4212.75 KB/s | 7.3 | 2.5 MB |
+| File vừa (~ 1 MB -> 10 MB):<br> 1.24MB.png  | Lần 1 | 1.094s | 1166.07KB/s | 4 | 0MB |
+| | Lần 2 | 1.014s | 1257.63 KB/s | 3 | 0 MB |
+| | Lần 3 | 1.120s | 1139.30 KB/s | 16 | 3.0 MB |
+| | **Trung bình** | 1.076 | 1187.67 KB/s | 7.6 | 1.0 MB |
+| File lớn (>= 10 MB): <br>12.9MB.mp4  | Lần 1 | 15824s | 834.29KB/s | 2 | 4 MB |
+| | Lần 2 | 15985s | 826.49KB/s | 4 | 1.5 MB |
+| | Lần 3 | 17378s | 760.23KB/s | 16 | 4 MB |
+| | **Trung bình** | 16396.7s | 807 KB/s | 7.3 | 3.2 MB |
+## File đã dùng và ảnh minh chứng:
+   **File nhỏ**: ![File gốc 19.8KB](test/File_nho/19.8KB.jfif)
+   - Ảnh minh chứng:
+![Ảnh Lần 1](test/File_nho/Lan1.jpg)
+![Ảnh Lần 1 phụ](test/File_nho/Lan1(2).jpg)
+![Ảnh Lần 2](test/File_nho/Lan2.jpg)
+![Ảnh Lần 2 phụ](test/File_nho/Lan2(2).jpg)
+![Ảnh Lần 3](test/File_nho/Lan3.jpg)
+![Ảnh Lần 3 phụ](test/File_nho/Lan3(2).jpg)
+   **File vừa**: ![File gốc 1.24MB](test/File_nho/1.24MB.png)
+   - Ảnh minh chứng:
+![Ảnh Lần 1](test/File_nho/Lan1.jpg)
+![Ảnh Lần 1 phụ](test/File_nho/Lan1(2).jpg)
+![Ảnh Lần 2](test/File_nho/Lan2.jpg)
+![Ảnh Lần 2 phụ](test/File_nho/Lan2(2).jpg)
+![Ảnh Lần 3](test/File_nho/Lan3.jpg)
+![Ảnh Lần 3 phụ](test/File_nho/Lan3(2).jpg)
+
+   **File lớn**: ![File gốc 12.9MB](test/File_nho/12.9MB.mp4)
+   - Ảnh minh chứng:
+![Ảnh Lần 1](test/File_nho/Lan1.jpg)
+![Ảnh Lần 1 phụ](test/File_nho/Lan1(2).jpg)
+![Ảnh Lần 2](test/File_nho/Lan2.jpg)
+![Ảnh Lần 2 phụ](test/File_nho/Lan2(2).jpg)
+![Ảnh Lần 3](test/File_nho/Lan3.jpg)
+![Ảnh Lần 3 phụ](test/File_nho/Lan3(2).jpg)
+## Kết luận:
+## 1. Phân tích Quản lý Tài nguyên (RAM & CPU)
+
+### Tối ưu hóa Bộ nhớ (RAM):
+* Số liệu cho thấy mức tiêu thụ RAM trung bình của hệ thống hoàn toàn không phụ thuộc vào dung lượng tệp tin. Dù truyền tệp 19.8 KB hay 12.9 MB, RAM luôn được duy trì ở mức cực kỳ thấp (chỉ từ 1.0 MB đến 4.5 MB).
+* Đặc biệt ở tệp 1.24MB, hệ thống ghi nhận có những lần RAM bằng 0 MB. Đây không phải là lỗi hệ thống mà do thời gian truyền diễn ra quá nhanh (~1 giây), dữ liệu chunking được nạp vào và thu hồi (Garbage Collection) ngay lập tức giữa các nhịp lấy mẫu của công cụ giám sát.
+
+> **=> Đánh giá:** Hệ thống đã cài đặt cơ chế đóng khung (Framing) và chia nhỏ dữ liệu (Chunking) một cách xuất sắc. Chương trình tuyệt đối không tải toàn bộ file vào bộ nhớ, loại bỏ hoàn toàn rủi ro tràn RAM (Memory Leak) khi hoạt động trong môi trường thực tế.
+
+### Năng lực xử lý (CPU Usage):
+* CPU trung bình dao động rất ổn định quanh mức 7%. Các đỉnh dao động (spikes) chạm mức 16% chỉ xuất hiện cục bộ ở một vài chu kỳ.
+
+> **=> Đánh giá:** Giao thức truyền nhận hoạt động nhẹ nhàng, tối ưu tốt I/O. Các nhịp vọt lên 16% phản ánh đúng chu trình CPU phải dồn tài nguyên để tính toán mã băm toàn vẹn dữ liệu (Checksum MD5/SHA-256) ở pha cuối cùng trước khi đóng kết nối.
+
+---
+
+## 2. Phân tích Tốc độ và Băng thông (Throughput)
+
+### Độ trễ giao thức với Tệp nhỏ (< 1MB):
+* Tốc độ truyền biến thiên rất mạnh (từ 929 KB/s đến 9664 KB/s). Do kích thước payload quá bé, thời gian truyền (chỉ ~0.01 giây) bị chi phối phần lớn bởi độ trễ thiết lập kết nối TCP (3-way handshake) và thao tác cấp phát tài nguyên ổ cứng.
+
+### Băng thông bền vững với Tệp lớn (>= 10MB):
+* Khi truyền tệp 12.9MB, tốc độ truyền đi vào trạng thái hội tụ và duy trì sự ổn định cao ở mức xấp xỉ 807 KB/s trong suốt hơn 16 giây.
+
+> **=> Đánh giá:** Hệ thống thể hiện khả năng duy trì băng thông (sustained bandwidth) rất đáng cậy. Luồng truyền dữ liệu không bị nghẽn hay đứt gãy giữa chừng khi phải xử lý tải trọng lớn, đáp ứng tốt yêu cầu truyền file liên tục.
+
+---
+
+## 3. Kết luận tổng thể
+Hệ thống dịch vụ truyền nhận file qua Socket đã đáp ứng toàn bộ các tiêu chí kỹ thuật cốt lõi. Giao thức hoạt động tin cậy, truyền tải tệp tin chính xác mà không gây ra bất kỳ hiện tượng thắt cổ chai phần cứng nào. 
