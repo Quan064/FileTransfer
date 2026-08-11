@@ -198,3 +198,18 @@ Cơ chế này giúp server hoạt động ổn định, không bị quá tải 
     ```
 
 ---
+## Bảng kiểm chứng
+| Phân loại File | Lần kiểm thử | Thời gian truyền(s) | Tốc độ truyền | CPU trung bình(%) | RAM trung bình (MB) |
+|---|---|---|---|---|---|
+| File nhỏ (< 1MB):<br>Images.jfif<br>(20KB) | Lần 1 | 0.021 | 929.77 KB/s | 4.0 | 8.0 MB |
+| | Lần 2 | 0.002 | 9664.13 KB/s | 2.0 | 3.0 MB |
+| | Lần 3 | 0.010 | 2044.35 KB/s | 16.0 | 2.5 MB |
+| | **Trung bình** | 0.011 | 4212.75 KB/s | 7.3 | 4.5 MB |
+| File vừa (~ 1 MB -> 10 MB):<br>  | Lần 1 | 0.007 | 55221.95 KB/s | 2.0 | 0.5 MB |
+| | Lần 2 | 0.013 | 28051.52 KB/s | ~1.0 | 3.0 MB |
+| | Lần 3 | 0.011 | 33280.92 KB/s | 2.0 | 3.0 MB |
+| | **Trung bình** | 0.031 | 38851.46 KB/s | 1.6 | 6.5 MB |
+| File lớn (>= 10 MB) | Lần 1 | 1701s | 1016.72 KB/s | 16 | 3 MB |
+| | Lần 2 | 1481 | 1167.87 KB/s | 14 | 2 MB |
+| | Lần 3 | 1578 | 1095.83 KB/s | 13 | 3 MB |
+| | **Trung bình** | 1586.67 | 1093.47 KB/s | 14.3 | 2.67 MB |
