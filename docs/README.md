@@ -78,7 +78,7 @@ FileTransfer/
 ├── interface_server/       # Giao diện server
 │   ├── storage/            # Thư mục server lưu file của các user
 │   │   └── <username>/
-│   └── user_id.csv         # File lưu thông tin user
+│   └── user_info.csv       # File lưu thông tin user
 │
 ├── interface_client/       # Giao diện client
 │   └── login_state.json    # File lưu trạng thái đăng nhập
@@ -264,9 +264,9 @@ Ngoài ra, khả năng xử lý đồng thời nhiều client và đảm bảo t
 
     Mở một terminal khác. Để đăng nhập, sử dụng lệnh:
     ```bash
-    python client.py login <username> <user_id> [--interactive]
+    python client.py login <username> [--interactive]
     ```
     Ví dụ:
     ```bash
-    python client.py login alice 101 --interactive
+    python client.py login quan --interactive
     ```

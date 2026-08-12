@@ -1,9 +1,9 @@
 import socket
 import logging
 import os
-import socket
 import threading
 import time
+import csv
 
 import common.config as config
 from common.storage import UserStorage
@@ -63,28 +63,88 @@ class ClientHandler(threading.Thread):
         }
         
         self.log.debug(f"Received from {self.addr}: {packet}")
-        handler = COMMANDS[packet.opcode]
+        handler = COMMANDS.get(packet.opcode)
         if handler is None:
             self.log.warning(f"Unknown or out-of-order opcode from {self.addr}: {packet.opcode.name}")
-            self._send_error(self, "Invalid operation")
+            self._send_error("Invalid operation")
             return
         handler(packet)
     
     def handle_login(self, packet: Packet):
         try:
             self.username = packet.payload.decode("utf-8")
-            self.user_id = packet.user_id
             self.storage = UserStorage(config.STORAGE_DIR, self.username)
+            self.log.info(f"User '{self.username}' logged in from {self.addr}.")
             
-            self.log.info(f"User '{self.username}' (ID: {self.user_id}) logged in from {self.addr}.")
-            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, Opcode.LOGIN.to_bytes(2, "big")))
+            users_data = []
+            with open(config.USER_INFO, "a+", newline="", encoding="utf-8") as f:
+                f.seek(0)
+                reader = csv.reader(f)
+                
+                for row in reader:
+                    if not row: continue
+                    username, user_id = row[0], int(row[1])
+                    users_data.append([username, user_id])
+                    
+                    if username == self.username:
+                        self.user_id = user_id
+                        break
+                else:
+                    existing_ids = {user[1] for user in users_data}
+                    new_id = 1
+                    
+                    while new_id in existing_ids:
+                        new_id += 1
+                    
+                    self.user_id = new_id
+                    users_data.append([self.username, self.user_id])
+                    users_data.sort(key=lambda x: x[1])
+                    
+                    f.seek(0)
+                    f.truncate()
+                    writer = csv.writer(f)
+                    writer.writerows(users_data)
+            
+            ack_payload = encode_struct_data(">HQ", Opcode.LOGIN.value, self.user_id)
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
+        
         except Exception as exc:
             self.log.error(f"Error during login for {self.addr}: {exc}")
             self._send_error(str(exc))
     
     def handle_logout(self, packet: Packet):
-        self.log.info(f"User '{self.username}' logged out from {self.addr}.")
-        send_packet(self.sock, Packet(Opcode.ACK, self.user_id, b"logout"))
+        if not self._require_login():
+            return
+        
+        try:
+            logged_out_user = self.username
+            logged_out_user_id = self.user_id
+            
+            users_data = []
+            with open(config.USER_INFO, "a+", newline="", encoding="utf-8") as f:
+                f.seek(0)
+                reader = csv.reader(f)
+                
+                for row in reader:
+                    if not row: continue
+                    if row[0] != logged_out_user:
+                        users_data.append(row)
+                
+                f.seek(0)
+                f.truncate()
+                writer = csv.writer(f)
+                writer.writerows(users_data)
+            
+            self.log.info(f"User '{logged_out_user}' logged out from {self.addr}.")
+            send_packet(self.sock, Packet(Opcode.ACK, logged_out_user_id, b"logout"))
+            
+            self.username = ""
+            self.user_id = 0
+            self.storage = None
+        
+        except Exception as exc:
+            self.log.error(f"Error during logout for {self.addr}: {exc}")
+            self._send_error(str(exc))
     
     def handle_file_list(self, packet: Packet):
         if not self._require_login():
