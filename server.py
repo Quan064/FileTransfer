@@ -12,7 +12,7 @@ from common.logger import setup_server_logger
 from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payload import decode_file_metadata, encode_struct_data
+from protocol.payload import decode_file_metadata
 
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
@@ -105,7 +105,7 @@ class ClientHandler(threading.Thread):
                     writer = csv.writer(f)
                     writer.writerows(users_data)
             
-            ack_payload = encode_struct_data(">HQ", Opcode.LOGIN.value, self.user_id)
+            ack_payload = Packet(Opcode.LOGIN, self.user_id).pack()
             send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
         
         except Exception as exc:
@@ -151,8 +151,9 @@ class ClientHandler(threading.Thread):
             return
         
         start_time = time.perf_counter()
-        payload = "\n".join(self.storage.list_files()).encode("utf-8")
-        send_packet(self.sock, Packet(Opcode.FILE_LIST_RESP, self.user_id, payload))
+        file_list = "\n".join(self.storage.list_files()).encode("utf-8")
+        ack_payload = Packet(Opcode.FILE_LIST, self.user_id, file_list).pack()
+        send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
         self._log_transfer("LIST", "-", 0, start_time)
     
     def handle_file_upload(self, packet: Packet):
@@ -180,7 +181,7 @@ class ClientHandler(threading.Thread):
                 offset = current_size
             
             # Send an ACK packet which contains offset.
-            ack_payload = encode_struct_data('>HQ', Opcode.FILE_UPLOAD.value, offset)
+            ack_payload = Packet(Opcode.FILE_UPLOAD, self.user_id, offset.to_bytes(8, "big")).pack()
             send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload))
             
             # Receiving file chunks from the client, starting from the specified offset.
@@ -217,7 +218,8 @@ class ClientHandler(threading.Thread):
             
             # Send a metadata packet to the client so it knows the file's name, size, and checksum.
             metadata_payload, _, _ = build_file_metadata_payload(target_path, filename)
-            send_packet(self.sock, Packet(Opcode.FILE_UPLOAD, self.user_id, metadata_payload))
+            ack_payload = Packet(Opcode.FILE_DOWNLOAD, self.user_id, metadata_payload)
+            send_packet(self.sock, Packet(Opcode.ACK, self.user_id, ack_payload.pack()))
             
             # Create a rate limiter to throttle the server's upload speed (client's download speed).
             limiter = RateLimiter(config.SERVER_UPLOAD_RATE_KBPS)

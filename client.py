@@ -9,7 +9,7 @@ import common.config as config
 from protocol.framing import RateLimiter, recv_packet, send_packet
 from protocol.opcode import Opcode
 from protocol.packet import Packet
-from protocol.payload import decode_file_metadata, decode_struct_data
+from protocol.payload import decode_file_metadata
 
 from transfer.file_transfer import build_file_metadata_payload, receive_file_chunks, send_file_chunks
 
@@ -48,12 +48,12 @@ class Client:
             print("[!] Login failed. Server response:", self._format_response(response))
             return False
         
-        acked_opcode_val, user_id = decode_struct_data('>HQ', response.payload)
-        if (acked_opcode := Opcode(acked_opcode_val)) != Opcode.LOGIN:
-            print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
+        response_payload = Packet.unpack(response.payload)
+        if response_payload and response_payload.opcode != Opcode.LOGIN:
+            print(f"[!] Server acknowledged wrong opcode: {response_payload.opcode.name}")
             return False
         
-        self.user_id = user_id
+        self.user_id = response_payload.user_id
         self._save_state(username)
         print(f"[*] Login successful as '{username}'.")
         return True
@@ -81,8 +81,13 @@ class Client:
         
         send_packet(self.sock, Packet(Opcode.FILE_LIST, self.user_id, b""))
         response = recv_packet(self.sock)
-        if response and response.opcode == Opcode.FILE_LIST_RESP:
-            payload = response.payload.decode("utf-8")
+        if not response or response.opcode != Opcode.ACK:
+            print("[!] List files failed.", self._format_response(response))
+            return False
+        
+        response_payload = Packet.unpack(response.payload)
+        if response_payload and response_payload.opcode == Opcode.FILE_LIST:
+            payload = response_payload.payload.decode("utf-8")
             print(payload if payload else "[+] No files found.")
             return True
         
@@ -115,15 +120,16 @@ class Client:
             print("[!] Upload failed.", self._format_response(response))
             return False
         
-        acked_opcode_val, next_offset = decode_struct_data('>HQ', response.payload)
-        if (acked_opcode := Opcode(acked_opcode_val)) != Opcode.FILE_UPLOAD:
-            print(f"[!] Server acknowledged wrong opcode: {acked_opcode.name}")
+        response_payload = Packet.unpack(response.payload)
+        if response_payload and response_payload.opcode != Opcode.FILE_UPLOAD:
+            print(f"[!] Server acknowledged wrong opcode: {response_payload.opcode.name}")
             return False
         
         # Create RateLimiter to throttle the upload speed according to the configuration.
         limiter = RateLimiter(config.CLIENT_UPLOAD_RATE_KBPS)
         
         # Start sending file chunks, beginning from the received offset.
+        next_offset = int.from_bytes(response_payload.payload, 'big')
         print(f"[*] Server is ready. Starting upload from offset {next_offset}...")
         send_file_chunks(self.sock, self.user_id, local_path, offset=next_offset, limiter=limiter)
         
@@ -146,13 +152,18 @@ class Client:
         
         # Wait for the server's response, which should contain the file's metadata.
         response = recv_packet(self.sock)
-        if not response or response.opcode != Opcode.FILE_UPLOAD:
+        if not response or response.opcode != Opcode.ACK:
             print("[!] Download failed.", self._format_response(response))
+            return False
+        
+        response_payload = Packet.unpack(response.payload)
+        if response_payload and response_payload.opcode != Opcode.FILE_DOWNLOAD:
+            print(f"[!] Server acknowledged wrong opcode: {response_payload.opcode.name}")
             return False
         
         try:
             # Decode the metadata to get the filename, total size, and expected checksum.
-            filename, total_size, expected_checksum = decode_file_metadata(response.payload)
+            filename, total_size, expected_checksum = decode_file_metadata(response_payload.payload)
             target_path = self._resolve_download_path(local_path, filename or remote_name)
             target_dir = os.path.dirname(target_path)
             

@@ -11,7 +11,6 @@ class Opcode(IntEnum):
     FILE_DELETE = 0x15
     
     # Server -> Client
-    FILE_LIST_RESP = 0x11
     FILE_CHUNK = 0x14
     ACK = 0x20
     ERROR = 0xFF

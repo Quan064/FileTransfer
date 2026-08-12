@@ -99,7 +99,7 @@ FileTransfer/
 │   └── file_transfer.py
 │
 ├── client.py               # Chương trình client
-├── server.py               # Chương trình server
+└── server.py               # Chương trình server
 ```
 
 ## Cơ chế kỹ thuật
@@ -109,12 +109,45 @@ FileTransfer/
 - **Cơ chế**: Dự án sử dụng kỹ thuật **Length-Prefixed Framing**. Trước khi gửi một gói tin logic, hệ thống sẽ tính toán tổng kích thước của nó và gửi con số này đi trước dưới dạng một tiêu đề có độ dài cố định (4-byte `LENGTH`).
 - **Luồng hoạt động**:
     1.  **Bên gửi**: Đóng gói dữ liệu vào `Packet`, tính tổng kích thước (`OPCODE` + `USER_ID` + `PAYLOAD`), sau đó gửi `[LENGTH (4 bytes)][Packet]` qua socket.
-    2.  **Bên nhận**: Trước tiên, đọc chính xác 4 byte đầu tiên để biết được kích thước `LENGTH` của gói tin đang chờ. Sau đó, tiếp tục đọc từ socket cho đến khi nhận đủ `LENGTH` byte. Tại thời điểm này, bên nhận chắc chắn đã có một gói tin hoàn chỉnh và có thể bắt đầu xử lý nó.
-- **Lý do lựa chọn**:
+    2.  **Bên nhận**: Trước tiên, đọc chính xác 4 byte đầu tiên để biết được kích thước `LENGTH` của gói tin đang chờ. Sau đó, tiếp tục đọc từ socket cho đến khi nhận đủ `LENGTH` byte. Tại thời điểm này, bên nhận chắc chắn đã có một gói tin hoàn chỉnh và có thể bắt đầu xử lý nó.- **Lý do lựa chọn**:
     - **Đơn giản và hiệu quả**: Đây là một trong những phương pháp tiêu chuẩn và hiệu quả nhất để giải quyết vấn đề message boundary trên TCP.
     - **An toàn với dữ liệu nhị phân**: So với việc dùng ký tự phân tách (delimiter), phương pháp này an toàn tuyệt đối vì nó không quan tâm đến nội dung của payload. Một ký tự phân tách có thể vô tình xuất hiện trong dữ liệu file nhị phân, gây lỗi nghiêm trọng.
 
-### 2. Đảm bảo Toàn vẹn File với Checksum SHA-256
+### 2. Định dạng Packet, Opcode và Payload
+
+Mỗi gói tin được truyền trên socket có cấu trúc tổng quát:
+
+```text
+[LENGTH: 4 bytes][OPCODE: 2 bytes][USER_ID: 2 bytes][PAYLOAD: variable]
+```
+
+Trong đó:
+- `LENGTH`: độ dài của toàn bộ `Packet` phía sau, tức `OPCODE + USER_ID + PAYLOAD`. Trường này thuộc lớp framing để xử lý TCP stream, không nằm trong đối tượng `Packet`.
+- `OPCODE`: mã lệnh xác định loại thao tác logic.
+- `USER_ID`: định danh người dùng sau khi đăng nhập. Trước khi đăng nhập, client gửi `USER_ID = 0`.
+- `PAYLOAD`: dữ liệu nhị phân thay đổi theo từng opcode. Nếu packet không cần dữ liệu bổ sung thì payload rỗng (`b""`).
+
+Để thống nhất cơ chế phản hồi, hệ thống không tạo opcode riêng cho từng loại response. Khi xử lý thành công một yêu cầu, server gửi packet ngoài có `OPCODE = ACK`; payload của `ACK` có thể chứa một packet con đã được `pack()` để biểu diễn phản hồi cho đúng opcode gốc. Ví dụ, phản hồi cho `LOGIN` là `ACK(payload = Packet(LOGIN, user_id, ...).pack())`, phản hồi cho `FILE_LIST` là `ACK(payload = Packet(FILE_LIST, user_id, danh_sach_file).pack())`.
+
+| Opcode | Giá trị | Hướng | Ý nghĩa | Định dạng payload |
+|---|---:|---|---|---|
+| `LOGIN` | `0x01` | Client→Server | Đăng nhập bằng username | Chuỗi UTF-8: `username` |
+| `LOGIN` | `0x01` | Server→Client | Trả về User ID | Rỗng (User ID được đặt trong header) |
+| `LOGOUT` | `0x02` | Client→Server | Đăng xuất người dùng hiện tại | Rỗng |
+| `FILE_LIST` | `0x10` | Client→Server | Yêu cầu danh sách file của user | Rỗng |
+| `FILE_LIST` | `0x10` | Server→Client | Trả về danh sách file của user | Chuỗi UTF-8, các tên file phân tách bằng `\n`, có thể rỗng nếu chưa có file |
+| `FILE_UPLOAD` | `0x12` | Client→Server | Khởi tạo upload file | Metadata file: `[filename_len: 2 bytes][filename: UTF-8][total_size: 8 bytes][checksum_len: 2 bytes][checksum: ASCII]` |
+| `FILE_UPLOAD` | `0x12` | Server→Client | Xác nhận bắt đầu upload và cho biết offset để resume | `[offset: 8 bytes]`, big-endian |
+| `FILE_DOWNLOAD` | `0x13` | Client→Server | Yêu cầu tải file | Chuỗi UTF-8 `remote_filename` |
+| `FILE_DOWNLOAD` | `0x13` | Server→Client | Trả metadata trước khi gửi chunk | Metadata file `[filename_len: 2 bytes][filename: UTF-8][total_size: 8 bytes][checksum_len: 2 bytes][checksum: ASCII]` |
+| `FILE_CHUNK` | `0x14` | Hai chiều | Truyền một phần dữ liệu file | `[offset: 8 bytes][chunk_data: bytes]`, trong đó `offset` là vị trí bắt đầu của chunk trong file |
+| `FILE_DELETE` | `0x15` | Client→Server | Xóa file trên server | Chuỗi UTF-8: `remote_filename` |
+| `ACK` | `0x20` | Server→Client | Xác nhận thao tác thành công hoặc bọc packet phản hồi | Thường là `Packet(opcode_gốc, user_id, response_payload).pack()`. Một số ACK hoàn tất đơn giản dùng chuỗi UTF-8 như `logout`, `uploaded:<filename>:sha256:<checksum>` hoặc `deleted:<filename>` |
+| `ERROR` | `0xFF` | Server→Client | Báo lỗi xử lý yêu cầu | Chuỗi UTF-8 mô tả lỗi |
+
+Các số nguyên trong header và payload nhị phân được mã hóa theo dạng big-endian. Với cách thiết kế này, opcode gốc luôn đại diện cho thao tác logic (`LOGIN`, `FILE_LIST`, `FILE_DOWNLOAD`, ...), còn `ACK` chỉ đóng vai trò xác nhận và mang dữ liệu phản hồi nếu cần.
+
+### 3. Đảm bảo Toàn vẹn File với Checksum SHA-256
 
 - **Vấn đề**: Trong quá trình truyền qua mạng, dữ liệu file có thể bị thay đổi hoặc mất mát do lỗi đường truyền, dẫn đến file bị hỏng ở phía người nhận.
 - **Cơ chế**:

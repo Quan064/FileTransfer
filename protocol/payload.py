@@ -43,16 +43,3 @@ def decode_file_chunk(payload: bytes):
     if len(payload) < 8:
         raise ValueError("Chunk payload is missing offset")
     return struct.unpack(">Q", payload[:8])[0], payload[8:]
-
-
-def encode_struct_data(format_string: str, *args) -> bytes:
-    """Encodes arguments into a byte string using a given struct format."""
-    return struct.pack(format_string, *args)
-
-
-def decode_struct_data(format_string: str, payload: bytes):
-    """Decodes a byte string into a tuple of values using a given struct format."""
-    expected_size = struct.calcsize(format_string)
-    if len(payload) != expected_size:
-        raise ValueError(f"Payload has incorrect size for format '{format_string}': expected {expected_size}, got {len(payload)}") # noqa: E501
-    return struct.unpack(format_string, payload)
