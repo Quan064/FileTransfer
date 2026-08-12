@@ -228,9 +228,11 @@ if __name__ == "__main__":
     
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((config.HOST, config.PORT))
+    server_socket.bind(("0.0.0.0", config.PORT))
     server_socket.listen(5)
-    server_log.info(f"Server listening on {config.HOST}:{config.PORT}")
+    
+    HOST = socket.gethostbyname(socket.gethostname())
+    server_log.info(f"Server listening on {HOST}:{config.PORT}")
     
     # Create a semaphore to limit the number of concurrent clients
     client_semaphore = threading.Semaphore(config.MAX_CONCURRENT_CLIENTS)

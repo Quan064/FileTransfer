@@ -75,8 +75,13 @@ FileTransfer/
 ├── logs/                   # Thư mục chứa file log
 │   └── server.log
 │
-├── storage/                # Thư mục server lưu file của các user
-│   └── <username>/
+├── interface_server/       # Giao diện server
+│   ├── storage/            # Thư mục server lưu file của các user
+│   │   └── <username>/
+│   └── user_id.csv         # File lưu thông tin user
+│
+├── interface_client/       # Giao diện client
+│   └── login_state.json    # File lưu trạng thái đăng nhập
 │
 ├── protocol/               # Module định nghĩa giao thức tùy chỉnh
 │   ├── opcode.py           # Định nghĩa các mã lệnh (opcode)
@@ -93,11 +98,8 @@ FileTransfer/
 ├── file_transfer/          # Module xử lý truyền file
 │   └── file_transfer.py
 │
-├── .client_state.json      # File lưu trạng thái đăng nhập
 ├── client.py               # Chương trình client
 ├── server.py               # Chương trình server
-├── config.py               # File cấu hình (HOST, PORT, ...)
-├── README.md               # File mô tả dự án
 ```
 
 ## Cơ chế kỹ thuật
@@ -185,38 +187,38 @@ Giới hạn băng thông tại thời điểm kiểm thử là 512KB/s đối v
 - **File nhỏ**: `\test\1KB.pdf`
 
     Upload lần 1:
-    ![Ảnh upload lần 1](test\proof_img\1KB_upload_test_1.png)
+    ![Ảnh upload lần 1](..\test\proof_img\1KB_upload_test_1.png)
     
     Download lần 1:
-    ![Ảnh download lần 1](test\proof_img\1KB_download_test_1.png)
+    ![Ảnh download lần 1](..\test\proof_img\1KB_download_test_1.png)
 
 - **File vừa**: `\test\10MB.pdf`
 
     Upload lần 1:
-    ![Ảnh upload lần 1](test\proof_img\10MB_upload_test_1.png)
+    ![Ảnh upload lần 1](..\test\proof_img\10MB_upload_test_1.png)
     
     Download lần 1:
-    ![Ảnh download lần 1](test\proof_img\10MB_download_test_1.png)
+    ![Ảnh download lần 1](..\test\proof_img\10MB_download_test_1.png)
 
 - **File lớn**: `\test\100MB.pdf`
 
     Upload lần 1:
-    ![Ảnh upload lần 1](test\proof_img\100MB_upload_test_1.png)
+    ![Ảnh upload lần 1](..\test\proof_img\100MB_upload_test_1.png)
     
     Download lần 1:
-    ![Ảnh download lần 1](test\proof_img\100MB_download_test_1.png)
+    ![Ảnh download lần 1](..\test\proof_img\100MB_download_test_1.png)
 
     Upload lần 2:
-    ![Ảnh upload lần 1](test\proof_img\100MB_upload_test_2.png)
+    ![Ảnh upload lần 1](..\test\proof_img\100MB_upload_test_2.png)
     
     Download lần 2:
-    ![Ảnh download lần 1](test\proof_img\100MB_download_test_2.png)
+    ![Ảnh download lần 1](..\test\proof_img\100MB_download_test_2.png)
 
     Upload lần 3:
-    ![Ảnh upload lần 1](test\proof_img\100MB_upload_test_3.png)
+    ![Ảnh upload lần 1](..\test\proof_img\100MB_upload_test_3.png)
     
     Download lần 3:
-    ![Ảnh download lần 1](test\proof_img\100MB_download_test_3.png)
+    ![Ảnh download lần 1](..\test\proof_img\100MB_download_test_3.png)
 
 ### Bảng kiểm chứng
 | Phân loại File | Hướng truyền | Lần kiểm thử | Thời gian truyền (s) | Tốc độ truyền | CPU trung bình (%) | RAM trung bình (MB) |
